@@ -70,8 +70,6 @@ def boundary_ratio(mesh, labels):
 
 
 
-
-# -------- PointNet-подобная модель --------
 class PointNetSeg(nn.Module):
     def __init__(self, n_parts):
         super().__init__()
@@ -85,7 +83,6 @@ class PointNetSeg(nn.Module):
         return self.mlp3(x)  # N x n_parts
 
 
-# -------- Viewer --------
 class PyVistaWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -120,7 +117,6 @@ class PyVistaWidget(QWidget):
         self.plotter.reset_camera()
         self.plotter.render()
 
-    # -------- Сегментация через PointNet --------
     def segment_model(self, n_parts, epochs=100, lr=0.01):
         if self.mesh is None:
             return
@@ -130,17 +126,14 @@ class PyVistaWidget(QWidget):
         vertices_scaled = scaler.fit_transform(vertices)
         vertices_tensor = torch.tensor(vertices_scaled, dtype=torch.float32)
 
-        # --- KMeans для эталонных сегментов (self-supervised) ---
         kmeans = KMeans(n_clusters=n_parts, n_init=10)
         labels = kmeans.fit_predict(vertices_scaled)
         labels_tensor = torch.tensor(labels, dtype=torch.long)
 
-        # --- Создаём PointNet ---
         model = PointNetSeg(n_parts)
         optimizer = optim.Adam(model.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
 
-        # --- Обучение на текущем объекте ---
         for epoch in range(epochs):
             optimizer.zero_grad()
             pred = model(vertices_tensor)
@@ -148,8 +141,7 @@ class PyVistaWidget(QWidget):
             loss.backward()
             optimizer.step()
 
-        # --- Предсказание сегментов ---
-        # --- Предсказание сегментов через PointNet ---
+        
         with torch.no_grad():
             pred_logits = model(vertices_tensor)  # N x n_parts
             pred_labels_pointnet = torch.argmax(pred_logits, dim=1).numpy()
@@ -169,28 +161,28 @@ class PyVistaWidget(QWidget):
 
             self.metrics_box.setText(metrics_text)
 
-        # --- Сегментация граней через центр грани + спорные зоны ---
+    
         faces = self.mesh.faces.reshape(-1, 4)[:, 1:4]
         face_centers = np.array([vertices_scaled[f].mean(axis=0) for f in faces])
 
-        # расстояние от центра грани до центроидов KMeans
+        
         dists_matrix = np.linalg.norm(face_centers[:, None, :] - kmeans.cluster_centers_[None, :, :], axis=2)
 
-        # ближайший и второй ближайший центроид
+        
         sorted_idx = np.argsort(dists_matrix, axis=1)
         nearest = sorted_idx[:, 0]
         second_nearest = sorted_idx[:, 1]
 
-        # вершина слишком близка к двум центроидам → спорная зона
+        
         threshold = 0.05  # можно подбирать
         mask_conflict = np.abs(dists_matrix[np.arange(len(face_centers)), nearest] -
                                dists_matrix[np.arange(len(face_centers)), second_nearest]) < threshold
 
-        # финальные метки граней
+        
         face_labels = nearest.copy()
         face_labels[mask_conflict] = -1  # спорные грани остаются пустыми
 
-        # --- Цвета ---
+        
         rng = np.random.default_rng(42)
         colors = rng.random((n_parts, 3))
         face_colors = np.zeros((faces.shape[0], 3))
@@ -203,7 +195,7 @@ class PyVistaWidget(QWidget):
         self.show_mesh(face_colors=face_colors)
 
 
-# -------- Main Window --------
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -228,7 +220,7 @@ class MainWindow(QWidget):
         layout.addLayout(top_layout)
         layout.addWidget(self.viewer)
 
-        # --- Поле для вывода метрик ---
+        
         self.metrics_box = QTextEdit()
         self.metrics_box.setReadOnly(True)
         self.metrics_box.setMaximumHeight(90)
@@ -255,4 +247,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+
     sys.exit(app.exec())
